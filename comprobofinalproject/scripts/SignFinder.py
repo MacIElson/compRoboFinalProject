@@ -10,6 +10,7 @@ from cv_bridge import CvBridge, CvBridgeError
 from nav_msgs.msg import Odometry
 import numpy as np
 import math
+import time 
 """
 Parts of this code are modified from a tutorial on feature matching and homography
 source: http://docs.opencv.org/trunk/doc/py_tutorials/py_feature2d/py_feature_homography/py_feature_homography.html#
@@ -61,7 +62,8 @@ class SignWatcher:
 
     def createSignDict(self, signName):
         print signName
-        signImg = cv2.imread(signName + ".png",0)
+        #if you error in the next two lines, make sure you're in the right folder
+        signImg = cv2.imread( signName + ".png",0)
         signKP, signDes = self.sift.detectAndCompute(signImg,None)
         sign = {"img": signImg, "name":signName, "keypoints":signKP, "descriptors": signDes}
         return sign
@@ -83,7 +85,7 @@ class SignWatcher:
         # only check every 4th image, because each check takes too long       
         if self.image_count % 32 is 0:
             for sign in self.signs:
-                self.checkSign(sign)
+                self.timeFunction(self.checkSign, sign["name"], sign)
         cv2.imshow('Video2', self.cv_image)
 
         cv2.waitKey(3)
@@ -172,7 +174,13 @@ class SignWatcher:
         self.xPosition = msg.pose.pose.position.x
         self.yPosition = msg.pose.pose.position.y
 
-
+    def timeFunction(self, fn, name = None, *kwargs):
+        start = time.time()
+        fn(*kwargs)
+        total = time.time() - start
+        if name is not None:
+            print name + " took:"
+        print str(total) + " seconds"
 
 
 
