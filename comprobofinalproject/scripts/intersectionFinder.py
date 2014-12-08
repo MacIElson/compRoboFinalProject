@@ -5,13 +5,17 @@ import cv2
 import numpy as np
 from cv_bridge import CvBridge, CvBridgeError
 from sensor_msgs.msg import Image
+from std_msgs.msg import String
 
 class LineFinder:
 	def __init__(self):
 		rospy.init_node('line_finder', anonymous = True)
 		rospy.image_sub = rospy.Subscriber("/camera/image_raw", Image, self.update_image)
+		self.dist_pub = rospy.Publisher("/inter_dist",String,queue_size = 10)
 		self.bridge = CvBridge()
 		self.image = None
+
+		self.polynomial = [-5.66680774e-07,5.68132807e-04,-2.17597871e-01,5.62396178e+01]
 		self.ignoredBorder = 50
 
 	def update_image(self,msg):
@@ -90,16 +94,18 @@ class LineFinder:
 
 				corner_pic[dst>.01*dst.max()] = [255,0,0]
 				corner_mask[dst>.01*dst.max()] = 1
-				print len(corner_mask),len(corner_mask[0]),corner_mask.shape
 				corner_mask = corner_mask[self.ignoredBorder:corner_mask.shape[0]-self.ignoredBorder, self.ignoredBorder:corner_mask.shape[1]-self.ignoredBorder]
 
 
 				intersectionPoint = self.intersectionCenter(corner_mask)
 				intersectionPoint = (intersectionPoint[0]+self.ignoredBorder,intersectionPoint[1]+self.ignoredBorder)
 				cv2.circle(corner_pic,intersectionPoint,2,(0,255,0),2)
-				print intersectionPoint
-				cv2.imshow("Corners",corner_mask)
 
+				p = np.poly1d(np.array(self.polynomial))
+
+				dist = p(intersectionPoint[1])
+				print dist
+				self.dist_pub.publish(str(dist))
 				cv2.imshow("frame",corner_pic)
 
 				cv2.waitKey(50)
