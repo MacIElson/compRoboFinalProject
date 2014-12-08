@@ -50,7 +50,12 @@ class LineFinder:
 				# Bitwise-AND mask and original image
 				res = cv2.bitwise_and(frame,frame, mask= mask)
 
-				
+				corner_gray = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
+				dst = cv2.cornerHarris(corner_gray,30,3,0.2)
+				dst = cv2.dilate(dst,None)
+				corner_pic = frame.copy()
+				corner_pic[dst>.01*dst.max()] = [255,0,0]
+				cv2.imshow("Corners",corner_pic)
 
 				gray = cv2.cvtColor(res,cv2.COLOR_BGR2GRAY)
 
