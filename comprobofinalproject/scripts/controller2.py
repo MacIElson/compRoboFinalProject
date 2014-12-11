@@ -17,12 +17,12 @@ from geometry_msgs.msg import Twist, Vector3
 import numpy as np
 import math
 
+import copy
+
+from PIDcontroller import PID
+
 #use colorCalibration.py to find the correct color range for the red line
 #connect to neato --> run this and StopSignFinder --> turn robot to on
-
-#function that does nothing
-def nothing(x):
-    pass
 
 class controller:
     def __init__(self, verbose = False):
@@ -34,8 +34,9 @@ class controller:
 
         # most recent raw CV image
         self.cv_image = None
+        self.newImage = False
         
-        self.bridge = CvBridge()
+        self.bridge = CvBridge()None
 
         #create on/off switch for robot, defaulted to off
         self.switch = '0 : OFF \n1 : ON'
@@ -47,15 +48,44 @@ class controller:
 
         #subscribe to odometry
         rospy.Subscriber('odom',Odometry,self.odometryCb)
+        self.newOdom = False
+        self.xPosition = None
+        self.yPosition = None
 
         #set up publisher to send commands to the robot
         self.pub = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
 
+        self.signDetected = False
+        self.intersectionDetected = False
+
+        self.lineFollowingOn = True
         self.dprint("Driver Initiated")
 
-        rospy.Subscriber('odom',Odometry,self.odometryCb)
-        self.xPosition = -1.0
-        self.yPosition = -1.0
+    def mainloop(self):
+        self.newOdomTemp = self.newOdom
+        self.newImageTemp = self.newImage
+        self.newOdom = False
+        self.newImage = False
+        self.xPositionTemp = self.xPosition
+        self.yPositionTemp = self.yPosition
+        self.cv_imageTemp = copy.copy(self.cv_image)
+
+
+        if self.signDetected:
+            pass
+        if self.intersectionDetected:
+            pass
+        if self.newImage and self.lineFollowingOn:
+            self.lineFollow()
+
+
+
+
+    def lineFollow(self):
+        pass
+
+    def initializeLineFollowPID(self):
+        pass
 
     #function that stops the robot is 0 is passed in, primary use is call back from stop switch
     def stop(self, x):
@@ -66,6 +96,7 @@ class controller:
     def odometryCb(self,msg):
         self.xPosition = msg.pose.pose.position.x
         self.yPosition = msg.pose.pose.position.y
+        self.newOdom = True
         
     # callback when image recieved
     def recieveImage(self,raw_image):
@@ -73,22 +104,13 @@ class controller:
 
         try:
             self.cv_image = self.bridge.imgmsg_to_cv2(raw_image, "bgr8")
+            self.newImage = True
         except CvBridgeError, e:
             print e
                    
         #display image recieved
         cv2.imshow('Video1', self.cv_image)
 
-        #retreive value of on/off switch
-        # s = cv2.getTrackbarPos(self.switch,'image')
-        
-        # #determine if robot should move
-        # if s == 0:
-        #     self.dprint("Driving Stopped")
-        # else:
-        #     pass
-        
-        #wait for openCV elements to refresh
         cv2.waitKey(3)
 
     #send movement command to robot
@@ -112,6 +134,7 @@ def main(args):
 
     #keep program running until shutdown
     while not(rospy.is_shutdown()):
+        ic.mainloop()
         r.sleep()
 
     #close all windows on exit

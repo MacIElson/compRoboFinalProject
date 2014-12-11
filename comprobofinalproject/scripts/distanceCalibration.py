@@ -22,8 +22,6 @@ import matplotlib.pyplot as plt
 def nothing(x):
 	pass
 
-
-
 class controller:
 	def __init__(self, verbose = False):
 		rospy.init_node('comprobofinalproject', anonymous=True)
