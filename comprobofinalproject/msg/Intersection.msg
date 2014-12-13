@@ -1,0 +1,2 @@
+float32 distance
+nav_msgs/Odometry odom
