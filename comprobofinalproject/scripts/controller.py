@@ -53,6 +53,10 @@ class controller:
 
         self.dprint("Driver Initiated")
 
+        rospy.Subscriber('odom',Odometry,self.odometryCb)
+        self.xPosition = -1.0
+        self.yPosition = -1.0
+
     #function that stops the robot is 0 is passed in, primary use is call back from stop switch
     def stop(self, x):
         if x == 0:
@@ -76,13 +80,13 @@ class controller:
         cv2.imshow('Video1', self.cv_image)
 
         #retreive value of on/off switch
-        s = cv2.getTrackbarPos(self.switch,'image')
+        # s = cv2.getTrackbarPos(self.switch,'image')
         
-        #determine if robot should move
-        if s == 0:
-            self.dprint("Driving Stopped")
-        else:
-            pass
+        # #determine if robot should move
+        # if s == 0:
+        #     self.dprint("Driving Stopped")
+        # else:
+        #     pass
         
         #wait for openCV elements to refresh
         cv2.waitKey(3)
