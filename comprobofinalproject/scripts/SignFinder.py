@@ -19,7 +19,7 @@ source: http://docs.opencv.org/trunk/doc/py_tutorials/py_feature2d/py_feature_ho
 class SignWatcher:
 
 
-    def __init__(self):      
+    def __init__(self, draw = False):      
         # The value of this determine how sure we are of seeing the stop sign
         # 0 -> no stop sign, 1 -> possible stop sign, 2 -> probably, 3 -> almost definitely  
         self.stop_detected = 0 
@@ -38,8 +38,7 @@ class SignWatcher:
         self.signs = []
         for sign in signNames:
             self.signs.append(self.createSignDict(sign))
-        print self.signs
-
+        
         # set up feature matching
         FLANN_INDEX_KDTREE = 0
         index_params = dict(algorithm = FLANN_INDEX_KDTREE, trees = 5)
@@ -59,9 +58,12 @@ class SignWatcher:
         self.xPosition = -1.0
         self.yPosition = -1.0
         self.image_odom = [self.xPosition, self.yPosition] 
+        self.start = 0
+        self.allCheck = []
+        self.shouldDraw = draw
+        self.drawings = [] # {fn, args}
 
     def createSignDict(self, signName):
-        print signName
         #if you error in the next two lines, make sure you're in the right folder
         signImg = cv2.imread( signName + ".png",0)
         signKP, signDes = self.sift.detectAndCompute(signImg,None)
@@ -81,20 +83,39 @@ class SignWatcher:
 
         # record the odom, so we can return location at the time the picture was recieved, not when the image is processed, because that can take .2 seconds 
         self.image_odom = [self.xPosition, self.yPosition] 
- 
+        self.draw()
         # only check every 4th image, because each check takes too long       
-        if self.image_count % 32 is 0:
+        if self.image_count % 5 is 0:
+            self.drawings = []
+            
+            # self.timeStart()
+            imageKP, imageDes = self.prepInputImage()
             for sign in self.signs:
-                self.timeFunction(self.checkSign, sign["name"], sign)
+                self.checkSign(sign, imageKP, imageDes)
+            # self.allCheck.append(self.timeStop("SignCheck"))
+            
+        # if self.image_count % 100 is 0:
+        #     print "Averagetime:"
+        #     print sum(self.allCheck)/len(self.allCheck)
+
         cv2.imshow('Video2', self.cv_image)
 
         cv2.waitKey(3)
 
-    # checks the most recent image for a stop sign 
-    def checkSign(self, sign):
+    def draw(self):
+        if self.shouldDraw:
+            for drawing in self.drawings:
+                fn = drawing["fn"]
+                args = drawing["args"]
+                fn(self.cv_image,*args)
+
+    def prepInputImage(self):
         # find the keypoints and descriptors with SIFT
         imageKP, imageDes = self.sift.detectAndCompute(self.cv_image, None)
+        return (imageKP, imageDes)
 
+    # checks the most recent image for a stop sign 
+    def checkSign(self, sign, imageKP, imageDes):
         #returns all the matches between the images
         matches = self.flann.knnMatch(sign["descriptors"],imageDes,k=2)
 
@@ -110,17 +131,23 @@ class SignWatcher:
             src_pts = np.float32([ sign["keypoints"][m.queryIdx].pt for m in good ]).reshape(-1,1,2)
             #points on the actual image
             dst_pts = np.float32([ imageKP[m.trainIdx].pt for m in good ]).reshape(-1,1,2)
-
+                
             M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC,5.0)
             
             h,w = sign["img"].shape
             pts = np.float32([ [0,0],[0,h-1],[w-1,h-1],[w-1,0] ]).reshape(-1,1,2)
             dst = cv2.perspectiveTransform(pts,M)
-            print sign["name"]
-            # #check if the matching object we've found is a square
-            # isSquare, meanSide = self.isSquare(dst)          
-            # if isSquare:  
 
+            #check if the matching object we've found is a square
+            isSquare, meanSide = self.isSquare(dst)          
+            if isSquare:  
+                print sign["name"]
+                # cv2.polylines(self.cv_image,[np.int32(dst)],True,255,3)
+            
+                self.drawings.append({"fn":cv2.polylines,"args":([np.int32(dst)],True,255,3)})
+                for pt in dst_pts:
+                    self.drawings.append({"fn":cv2.circle,"args":((pt[0][0],pt[0][1]), 5,255, -1 )})
+                    
             #     #calculate the distance to the stopsign
             #     stopDist = self.estRange(meanSide)
 
@@ -164,7 +191,7 @@ class SignWatcher:
         meanSide = np.mean(sides)
 
         # if the any side if more than 10% over or under the mean or if the sides are less than a pixel long, return false
-        if maxSide > meanSide*1.1 or minSide < meanSide *.9 or meanSide < 1:
+        if maxSide > meanSide*3 or minSide < meanSide *.2 or meanSide < 1:
             return False, meanSide 
         
         return True, meanSide
@@ -175,17 +202,24 @@ class SignWatcher:
         self.yPosition = msg.pose.pose.position.y
 
     def timeFunction(self, fn, name = None, *kwargs):
-        start = time.time()
+        self.timeStart()
         fn(*kwargs)
-        total = time.time() - start
+        self.timeStop(name)
+
+    def timeStart(self):
+        self.start = time.time() 
+
+    def timeStop(self, name = None):
+        total = time.time() - self.start
         if name is not None:
             print name + " took:"
         print str(total) + " seconds"
-
+        return total
+        
 
 
 def main(args):
-    ic = SignWatcher()
+    ic = SignWatcher(True)
     try:
         rospy.spin()
     except KeyboardInterrupt:
