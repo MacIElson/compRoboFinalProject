@@ -87,8 +87,8 @@ class controller:
 		cv2.waitKey(3)
 
 		offsetDist = 14.5
-		distList1 = [24.5,26.5,28.5,30.5,34.5,38.5,44.5]
-		distList = [10,12,14,16,20,24,30]
+		distList1 = [22.5,24.5,26.5,28.5,30.5,34.5,38.5,44.5]
+		distList = [8,10,12,14,16,20,24,30]
 		pixList = []
 
 		for dist in distList:
@@ -101,7 +101,7 @@ class controller:
 			self.mouseClick = None
 			pixList.append(click[1])
 
-		z = np.polyfit(pixList, distList1,  3)
+		z = np.polyfit(pixList, distList1,  4)
 		print z
 		p = np.poly1d(z)
 		xp = np.linspace(0, 640, 640)

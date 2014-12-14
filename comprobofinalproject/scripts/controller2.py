@@ -12,6 +12,7 @@ from sensor_msgs.msg import CompressedImage
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, PoseArray, Pose, Point, Quaternion
 from std_msgs.msg import Header, String
 from nav_msgs.msg import Odometry
+from comprobofinalproject.msg import Intersection
 
 from geometry_msgs.msg import Twist, Vector3
 import numpy as np
@@ -49,13 +50,15 @@ class controller:
         self.xPosition = None
         self.yPosition = None
 
+        self.inter_sub = rospy.Subscriber("/intersection",Intersection,self.intersectionCallback)
+
         #set up publisher to send commands to the robot
         self.pub = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
 
         self.signDetected = False
         self.intersectionDetected = False
 
-        self.lineFollowingOn = True
+        self.mode = "lineFollowing"
         self.initializeLineFollowPID()
 
         cv2.waitKey(3)
@@ -101,18 +104,53 @@ class controller:
         if cv2.getTrackbarPos(self.switchC,'image') == 1:
             self.newOdomTemp = self.newOdom
             self.newImageTemp = self.newImage
+            self.intersectionDetectedTemp = self.intersectionDetected
+            self.signDetectedTemp = self.signDetected
             self.newOdom = False
             self.newImage = False
+            self.intersectionDetected = False
+            self.signDetected = False
             self.xPositionTemp = self.xPosition
             self.yPositionTemp = self.yPosition
             self.cv_imageTemp = copy.copy(self.cv_image)
 
-            if self.signDetected:
+            if self.signDetectedTemp:
                 pass
-            if self.intersectionDetected:
-                pass
-            if self.newImageTemp and self.lineFollowingOn:
+            if self.intersectionDetectedTemp:
+                self.mode = "driveToIntersection"
+                print "Now driving toward intersection"
+            if self.mode == "driveToIntersection" and self.newOdomTemp:
+                self.driveToIntersection()
+            if self.mode == "rotateAtIntersection" and self.newOdomTemp:
+                self.rotateAtIntersection()
+            if self.newImageTemp and self.mode == "lineFollowing":
                 self.lineFollow()
+
+    def driveToIntersection(self):
+        distTravelled = self.euclidDistance(self.xPosition,self.yPosition,self.intersection.odom.pose.pose.position.x,self.intersection.odom.pose.pose.position.y)
+        if distTravelled > (self.intersection.dist - .01):
+            self.sendCommand(0, 0)
+            self.mode = "rotateAtIntersection"
+            print "now rotating at intersection"
+        else:
+            self.sendCommand(.10, 0)
+
+    def rotateAtInteresection(self):
+        angDif = abs((self.zAngle + 2*math.pi)%(2*math.pi) - (self.chosenExit + 2*math.pi)%(2*math.pi))
+        print "angDif: " + str(angDif)
+        if angDif < (math.pi/36.0):
+            self.sendCommand(0, 0)
+            self.mode = "lineFollowing"
+            print "Now Line Following"
+        else:
+            self.sendCommand(0, math.copysign(.20, self.chosenExit))
+
+    def intersectionCallback(self,msg):
+        print msg        
+        self.intersection = msg
+        self.chosenExit = random.choice(self.intersection.exits)
+        self.intersectionDetected = True
+        print "exitChosen: " + str(self.chosenExit)
 
     def lineFollow(self):
         smallCopy = self.cv_imageTemp[350:480]
@@ -176,15 +214,20 @@ class controller:
         self.pid = PID(P=2.0, I=0.0, D=1.0, Derivator=0, Integrator=0, Integrator_max=500, Integrator_min=-500)
         self.pid.setPoint(float(320))
 
+    #calculate distance between 2 points
+    def euclidDistance(self,x1,y1,x2,y2):
+        return math.hypot(x2 - x1, y2 - y1)
+
     #function that stops the robot is 0 is passed in, primary use is call back from stop switch
     def stop(self, x):
         if x == 0:
             self.sendCommand(0,0)
     
     #odometry callback
-    def odometryCb(self,msg):
-        self.xPosition = msg.pose.pose.position.x
-        self.yPosition = msg.pose.pose.position.y
+    def odometryCb(self,odom):
+        self.xPosition = odom.pose.pose.position.x
+        self.yPosition = odom.pose.pose.position.y
+        self.zAngle = math.atan2(2* (odom.pose.pose.orientation.z * odom.pose.pose.orientation.w),1 - 2 * ((odom.pose.pose.orientation.y)**2 + (odom.pose.pose.orientation.z)**2))
         self.newOdom = True
         
     # callback when image recieved
