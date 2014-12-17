@@ -159,7 +159,15 @@ class controller:
                 angDif = -1.0 * (2*math.pi - abs(dist))
 
         print "angDif: " + str(angDif)
-        if abs(angDif) < (math.pi/6) and (self.averageLineIndex-320) < 100:
+        if self.averageLineIndex == None:
+            lineInRange = False
+        elif (self.averageLineIndex - 320) < 100:
+            lineInRange = True
+        else: 
+            lineInRange = False
+
+
+        if abs(angDif) < (math.pi/6) and lineInRange:
             self.sendCommand(0, 0)
             self.mode = "lineFollowing"
             print "Now Line Following"

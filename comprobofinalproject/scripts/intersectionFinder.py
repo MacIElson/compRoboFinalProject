@@ -23,7 +23,7 @@ class LineFinder:
 		self.polynomial = [2.64076873e-09,-3.65044029e-06,1.93383304e-03,-4.95872487e-01,7.85179656e+01]
 		self.ignoredBorder = [200,25,50,50]
 		self.found = 0
-		self.exitBorder = [150,50,50,50]
+		self.exitBorder = [200,50,50,50]
 
 		self.createTrackbars()
 
@@ -153,14 +153,17 @@ class LineFinder:
 
 				if(intersectionPoint != None):
 					self.found += 1
-					if(self.found >= 4):
+					if(self.found == 4):
 						intersectionPoint = (intersectionPoint[0]+self.ignoredBorder[2],intersectionPoint[1]+self.ignoredBorder[0])
 						cv2.circle(corner_pic,intersectionPoint,2,(255,0,0),2)
 
 
 						#Crop mask
 						border = mask
+						#Revove top
+						border[:150,:]=0
 						border[self.exitBorder[0]:-self.exitBorder[1],self.exitBorder[2]:-self.exitBorder[3]] = 0
+
 						exits = self.exitPathCenters(mask)
 
 						if(len(exits) == 3 and len(centers) == 2):
