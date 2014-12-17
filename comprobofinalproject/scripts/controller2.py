@@ -209,7 +209,7 @@ class controller:
 
         try:
             self.averageLineIndex = (float(sum(num))/len(num))
-            print "averageLineIndex: " + str(averageLineIndex)
+            print "averageLineIndex: " + str(self.averageLineIndex)
         except:
             self.averageLineIndex = None
             print "no line found"
