@@ -122,6 +122,7 @@ class controller:
                 pass
             if self.intersectionDetectedTemp:
                 self.mode = "driveToIntersection"
+                self.driveToIntersection()
                 print "Now driving toward intersection"
             if self.mode == "driveToIntersection" and self.newOdomTemp:
                 self.driveToIntersection()
@@ -141,19 +142,33 @@ class controller:
             self.sendCommand(.10, 0)
 
     def rotateAtIntersection(self):
-        angDif = abs((self.zAngle + 2*math.pi)%(2*math.pi) - (self.chosenExit + 2*math.pi)%(2*math.pi))
+       
+
+        #angDif = abs((self.zAngle + 2*math.pi)%(2*math.pi) - (self.chosenExit[0] + 2*math.pi)%(2*math.pi))
+        dist = (self.chosenExit[0] - self.zAngle) #Angular deviation from goal
+
+        #This block governs calculating the proper angular velocity
+        if  abs(dist) < math.pi: #If we are less than 180 degrees off spin in this direction
+            angDif = dist
+        else: #The case where we are more than 180 degrees off spin the opposite direction
+            if dist < 0:
+                angDif = (2*math.pi - abs(dist)) #Ensure proportionality relative to actual angle deviation
+            else:
+                angDif = -1.0 * (2*math.pi - abs(dist))
+
         print "angDif: " + str(angDif)
-        if angDif < (math.pi/36.0):
+        if abs(angDif) < (math.pi/36.0):
             self.sendCommand(0, 0)
             self.mode = "lineFollowing"
             print "Now Line Following"
         else:
-            self.sendCommand(0, math.copysign(.20, self.chosenExit))
+            self.sendCommand(0, math.copysign(.20, self.chosenExit[1]))
 
     def intersectionCallback(self,msg):
         print msg        
         self.intersection = msg
-        self.chosenExit = random.choice(self.intersection.exits)
+        ranInt = random.randrange(0,len(self.intersection.exits))
+        self.chosenExit = (msg.exits[ranInt],msg.raw_exits[ranInt])
         self.intersectionDetected = True
         print "exitChosen: " + str(self.chosenExit)
         distTravelled = self.euclidDistance(self.xPosition,self.yPosition,self.intersection.x,self.intersection.y)
