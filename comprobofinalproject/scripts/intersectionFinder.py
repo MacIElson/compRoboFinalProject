@@ -20,7 +20,7 @@ class LineFinder:
 		self.image = None
 		self.odometry = None
 
-		self.polynomial = [3.28735261e-09,-4.32672402e-06,2.17941676e-03,-5.29013494e-01,7.86939929e+01]
+		self.polynomial = [2.80024885e-09,-3.68085459e-06,1.84765243e-03,-4.50039884e-01,7.14709805e+01]
 		self.ignoredBorder = [200,25,50,50]
 		self.found = 0
 		self.exitBorder = [150,50,50,50]
@@ -153,7 +153,7 @@ class LineFinder:
 
 				if(intersectionPoint != None):
 					self.found += 1
-					if(self.found > 4):
+					if(self.found >= 4):
 						intersectionPoint = (intersectionPoint[0]+self.ignoredBorder[2],intersectionPoint[1]+self.ignoredBorder[0])
 						cv2.circle(corner_pic,intersectionPoint,2,(255,0,0),2)
 
@@ -185,15 +185,19 @@ class LineFinder:
 						x = odom.pose.pose.position.x
 						y = odom.pose.pose.position.y
 						z = math.atan2(2* (odom.pose.pose.orientation.z * odom.pose.pose.orientation.w),1 - 2 * ((odom.pose.pose.orientation.y)**2 + (odom.pose.pose.orientation.z)**2))
-						x = x + dist * math.cos(z)
-						y = y + dist * math.sin(z)
+						x += (dist/100) * math.cos(z)
+						y += (dist/100) * math.sin(z)
 
 						angles = []
 						for each in exits:
-							angles.append((z + self.exitAngle(each,intersectionPoint) + math.pi) % (2 * math.pi) - math.pi)
+							angles.append(self.exitAngle(each,intersectionPoint))
 							#angles.append(self.exitAngle(each,intersectionPoint))
 							cv2.line(corner_pic,intersectionPoint,each,(0,255,0),2)
+						angles.remove(max(angles, key = lambda x: abs(x)))
+						print angles
+						angles = [(z + angle + math.pi) % (2 * math.pi) - math.pi for angle in angles]
 						
+						print dist
 						inter = Intersection(x = x, y = y, z = z, exits = angles,distance = dist,odom = odom)
 
 						self.dist_pub.publish(inter)

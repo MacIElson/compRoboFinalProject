@@ -17,6 +17,7 @@ from comprobofinalproject.msg import Intersection
 from geometry_msgs.msg import Twist, Vector3
 import numpy as np
 import math
+import random
 
 import copy
 
@@ -43,6 +44,9 @@ class controller:
         
         #subscribe tocamera images
         self.image_sub = rospy.Subscriber("camera/image_raw", Image, self.recieveImage)
+
+        #subscribe to intersection
+        self.inter_sub = rospy.Subscriber("/intersection",Intersection, self.intersectionCallback)
 
         #subscribe to odometry
         rospy.Subscriber('odom',Odometry,self.odometryCb)
@@ -76,7 +80,7 @@ class controller:
         cv2.setTrackbarPos(self.switchM,'image',1)
 
         cv2.createTrackbar('speed','image',0,200,nothing)
-        cv2.setTrackbarPos('speed','image',15)
+        cv2.setTrackbarPos('speed','image',10)
 
         cv2.createTrackbar('pidP','image',0,8000,nothing)
         cv2.setTrackbarPos('pidP','image',130)
@@ -127,15 +131,16 @@ class controller:
                 self.lineFollow()
 
     def driveToIntersection(self):
-        distTravelled = self.euclidDistance(self.xPosition,self.yPosition,self.intersection.odom.pose.pose.position.x,self.intersection.odom.pose.pose.position.y)
-        if distTravelled > (self.intersection.dist - .01):
+        distTravelled = self.euclidDistance(self.xPosition,self.yPosition,self.intersection.x,self.intersection.y)
+        print "distToIntersection: " + str(distTravelled)
+        if abs(distTravelled) < (.02):
             self.sendCommand(0, 0)
             self.mode = "rotateAtIntersection"
             print "now rotating at intersection"
         else:
             self.sendCommand(.10, 0)
 
-    def rotateAtInteresection(self):
+    def rotateAtIntersection(self):
         angDif = abs((self.zAngle + 2*math.pi)%(2*math.pi) - (self.chosenExit + 2*math.pi)%(2*math.pi))
         print "angDif: " + str(angDif)
         if angDif < (math.pi/36.0):
@@ -151,6 +156,9 @@ class controller:
         self.chosenExit = random.choice(self.intersection.exits)
         self.intersectionDetected = True
         print "exitChosen: " + str(self.chosenExit)
+        distTravelled = self.euclidDistance(self.xPosition,self.yPosition,self.intersection.x,self.intersection.y)
+        print "distToIntersectionInitial: " + str(distTravelled)
+        print "calculated Dist: " + str(self.intersection.distance)
 
     def lineFollow(self):
         smallCopy = self.cv_imageTemp[350:480]
@@ -247,7 +255,7 @@ class controller:
 
     #send movement command to robot
     def sendCommand(self, lin, ang):
-        print "speed: " + str(lin) + ", " + "ang: " + str(ang)
+        #print "speed: " + str(lin) + ", " + "ang: " + str(ang)
         if cv2.getTrackbarPos(self.switchM,'image') == 1:
             twist = Twist()
             twist.linear.x = lin; twist.linear.y = 0; twist.linear.z = 0
