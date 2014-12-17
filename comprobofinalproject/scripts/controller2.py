@@ -128,6 +128,8 @@ class controller:
                 self.driveToIntersection()
             if self.mode == "rotateAtIntersection" and self.newOdomTemp:
                 self.rotateAtIntersection()
+            if self.newImageTemp:
+                self.findLine()
             if self.newImageTemp and self.mode == "lineFollowing":
                 self.lineFollow()
 
@@ -157,7 +159,7 @@ class controller:
                 angDif = -1.0 * (2*math.pi - abs(dist))
 
         print "angDif: " + str(angDif)
-        if abs(angDif) < (math.pi/36.0):
+        if abs(angDif) < (math.pi/6) and (self.averageLineIndex-320) < 100:
             self.sendCommand(0, 0)
             self.mode = "lineFollowing"
             print "Now Line Following"
@@ -175,7 +177,7 @@ class controller:
         print "distToIntersectionInitial: " + str(distTravelled)
         print "calculated Dist: " + str(self.intersection.distance)
 
-    def lineFollow(self):
+    def findLine(self):
         smallCopy = self.cv_imageTemp[350:480]
 
         hsv = cv2.cvtColor(smallCopy, cv2.COLOR_BGR2HSV)
@@ -206,32 +208,34 @@ class controller:
                 num.append(i+1)
 
         try:
-            averageLineIndex = (float(sum(num))/len(num))
+            self.averageLineIndex = (float(sum(num))/len(num))
             print "averageLineIndex: " + str(averageLineIndex)
         except:
+            self.averageLineIndex = None
             print "no line found"
             return
 
-                #get and set PID control constants
-        pidP100 = cv2.getTrackbarPos('pidP','image')
-        pidI100 = cv2.getTrackbarPos('pidI','image')
-        pidD100 = cv2.getTrackbarPos('pidD','image')
+    def lineFollow(self):
+        if self.averageLineIndex != None:
+            #get and set PID control constants
+            pidP100 = cv2.getTrackbarPos('pidP','image')
+            pidI100 = cv2.getTrackbarPos('pidI','image')
+            pidD100 = cv2.getTrackbarPos('pidD','image')
 
-        pidP = float(pidP100)/100
-        pidI = float(pidI100)/100
-        pidD = float(pidD100)/100
+            pidP = float(pidP100)/100
+            pidI = float(pidI100)/100
+            pidD = float(pidD100)/100
 
-        self.pid.setKp(pidP)
-        self.pid.setKi(pidI)
-        self.pid.setKd(pidD)
+            self.pid.setKp(pidP)
+            self.pid.setKi(pidI)
+            self.pid.setKd(pidD)
 
-        #use the pid controller to determine the anglular velocity
-        ang = self.pid.update(averageLineIndex)/1000
+            #use the pid controller to determine the anglular velocity
+            ang = self.pid.update(self.averageLineIndex)/1000
 
-        speed = cv2.getTrackbarPos('speed','image')/100.0
+            speed = cv2.getTrackbarPos('speed','image')/100.0
 
-        self.sendCommand(speed, ang)
-        
+            self.sendCommand(speed, ang)
 
     def initializeLineFollowPID(self):
         self.pid = PID(P=2.0, I=0.0, D=1.0, Derivator=0, Integrator=0, Integrator_max=500, Integrator_min=-500)
