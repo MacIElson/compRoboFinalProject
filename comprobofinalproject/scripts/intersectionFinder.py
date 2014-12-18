@@ -20,7 +20,7 @@ class LineFinder:
 		self.image = None
 		self.odometry = None
 
-		self.polynomial = [2.64076873e-09,-3.65044029e-06,1.93383304e-03,-4.95872487e-01,7.85179656e+01]
+		self.polynomial = [2.22317146e-09,-3.24371120e-06,1.80937752e-03,-4.84182280e-01,7.86062005e+01]
 		self.ignoredBorder = [200,25,50,50]
 		self.found = 0
 		self.exitBorder = [200,50,50,50]
@@ -201,7 +201,7 @@ class LineFinder:
 						odom_angles = [(z + angle + math.pi) % (2 * math.pi) - math.pi for angle in angles]
 						
 						print dist
-						inter = Intersection(x = x, y = y, z = z, exits = odom_angles, raw_exits=angles ,distance = dist,odom = odom)
+						inter = Intersection(x = x, y = y, z = z, exits = odom_angles, raw_exits=angles , current_path_exit = ,distance = dist,odom = odom)
 
 						self.dist_pub.publish(inter)
 				else:

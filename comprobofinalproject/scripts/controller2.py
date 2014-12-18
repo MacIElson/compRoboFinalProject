@@ -14,6 +14,8 @@ from std_msgs.msg import Header, String
 from nav_msgs.msg import Odometry
 from comprobofinalproject.msg import Intersection
 
+from comprobofinalproject.srv import *
+
 from geometry_msgs.msg import Twist, Vector3
 import numpy as np
 import math
@@ -56,14 +58,19 @@ class controller:
 
         self.inter_sub = rospy.Subscriber("/intersection",Intersection,self.intersectionCallback)
 
+        self.taskPub = rospy.Publisher('/task', String, queue_size=10)
+        self.taskPub.publish(task)
+
         #set up publisher to send commands to the robot
-        self.pub = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
+        self.velPub = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
 
         self.signDetected = False
         self.intersectionDetected = False
 
         self.mode = "lineFollowing"
         self.initializeLineFollowPID()
+
+        rospy.wait_for_service('getTurn')
 
         cv2.waitKey(3)
 
@@ -78,6 +85,10 @@ class controller:
         self.switchM = 'sendCommand \n 0 : OFF \n1 : ON'
         cv2.createTrackbar(self.switchM, 'image',0,1,self.stop)
         cv2.setTrackbarPos(self.switchM,'image',1)
+
+        self.switchTask = 'Task \n 0 : Random \n1 : BuildMap\n2 : GoToPoint'
+        cv2.createTrackbar(self.switchM, 'image',0,2,self.setTask)
+        cv2.setTrackbarPos(self.switchM,'image',0)
 
         cv2.createTrackbar('speed','image',0,200,nothing)
         cv2.setTrackbarPos('speed','image',10)
@@ -170,7 +181,8 @@ class controller:
         if abs(angDif) < (math.pi/6) and lineInRange:
             self.sendCommand(0, 0)
             self.mode = "lineFollowing"
-            print "Now Line Following"
+            self.initializeLineFollowPID()
+            #print "Now Line Following"
         else:
             self.sendCommand(0, math.copysign(.20, self.chosenExit[1]))
 
@@ -179,14 +191,19 @@ class controller:
         self.intersection = msg
         ranInt = random.randrange(0,len(self.intersection.exits))
         self.chosenExit = (msg.exits[ranInt],msg.raw_exits[ranInt])
+
+        getTurnServiceProxy = rospy.ServiceProxy('getTurn', intersectionFoundGetTurn)
+        resp1 = getTurnServiceProxy(x = msg.x, y = msg.y, exits = msg.exits, exits_raw = msg.raw_exits, current_path_exit = msg.current_path_exit)
+        self.chosenExit = (resp1.exit_chosen,resp1.exit_chosen_raw)
+
         self.intersectionDetected = True
-        print "exitChosen: " + str(self.chosenExit)
+        print "exitChosen: " + str(resp1.exit_chosen_raw)
         distTravelled = self.euclidDistance(self.xPosition,self.yPosition,self.intersection.x,self.intersection.y)
         print "distToIntersectionInitial: " + str(distTravelled)
         print "calculated Dist: " + str(self.intersection.distance)
 
     def findLine(self):
-        smallCopy = self.cv_imageTemp[350:480]
+        smallCopy = self.cv_imageTemp[350:478]
 
         hsv = cv2.cvtColor(smallCopy, cv2.COLOR_BGR2HSV)
 
@@ -257,6 +274,15 @@ class controller:
     def stop(self, x):
         if x == 0:
             self.sendCommand(0,0)
+
+    def setTask(self,x):
+        if x == 0:
+            task = "Random"
+        elif x == 1:
+            task = "Map"
+        elif x == 2:
+            task = "Path"
+        self.taskPub.publish(task)
     
     #odometry callback
     def odometryCb(self,odom):
@@ -276,7 +302,7 @@ class controller:
             print e
                    
         #display image recieved
-        cv2.imshow('Video1', self.cv_image)
+        #cv2.imshow('Video1', self.cv_image)
 
         cv2.waitKey(3)
 
@@ -287,7 +313,7 @@ class controller:
             twist = Twist()
             twist.linear.x = lin; twist.linear.y = 0; twist.linear.z = 0
             twist.angular.x = 0; twist.angular.y = 0; twist.angular.z = ang
-            self.pub.publish(twist)
+            self.velPub.publish(twist)
 
     #function that makes print statements switchable
     def dprint(self, print_message):
@@ -302,7 +328,7 @@ def main(args):
     ic = controller(False)
 
     #set ROS refresh rate
-    r = rospy.Rate(30)
+    r = rospy.Rate(45)
 
     #keep program running until shutdown
     while not(rospy.is_shutdown()):
