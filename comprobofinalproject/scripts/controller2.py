@@ -14,9 +14,12 @@ from std_msgs.msg import Header, String
 from nav_msgs.msg import Odometry
 from comprobofinalproject.msg import Intersection
 
+from comprobofinalproject.srv import *
+
 from geometry_msgs.msg import Twist, Vector3
 import numpy as np
 import math
+import random
 
 import copy
 
@@ -44,6 +47,9 @@ class controller:
         #subscribe tocamera images
         self.image_sub = rospy.Subscriber("camera/image_raw", Image, self.recieveImage)
 
+        #subscribe to intersection
+        self.inter_sub = rospy.Subscriber("/intersection",Intersection, self.intersectionCallback)
+
         #subscribe to odometry
         rospy.Subscriber('odom',Odometry,self.odometryCb)
         self.newOdom = False
@@ -52,14 +58,19 @@ class controller:
 
         self.inter_sub = rospy.Subscriber("/intersection",Intersection,self.intersectionCallback)
 
+        self.taskPub = rospy.Publisher('/task', String, queue_size=10)
+        self.taskPub.publish(task)
+
         #set up publisher to send commands to the robot
-        self.pub = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
+        self.velPub = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
 
         self.signDetected = False
         self.intersectionDetected = False
 
         self.mode = "lineFollowing"
         self.initializeLineFollowPID()
+
+        rospy.wait_for_service('getTurn')
 
         cv2.waitKey(3)
 
@@ -75,8 +86,12 @@ class controller:
         cv2.createTrackbar(self.switchM, 'image',0,1,self.stop)
         cv2.setTrackbarPos(self.switchM,'image',1)
 
+        self.switchTask = 'Task \n 0 : Random \n1 : BuildMap\n2 : GoToPoint'
+        cv2.createTrackbar(self.switchM, 'image',0,2,self.setTask)
+        cv2.setTrackbarPos(self.switchM,'image',0)
+
         cv2.createTrackbar('speed','image',0,200,nothing)
-        cv2.setTrackbarPos('speed','image',15)
+        cv2.setTrackbarPos('speed','image',10)
 
         cv2.createTrackbar('pidP','image',0,8000,nothing)
         cv2.setTrackbarPos('pidP','image',130)
@@ -118,42 +133,77 @@ class controller:
                 pass
             if self.intersectionDetectedTemp:
                 self.mode = "driveToIntersection"
+                self.driveToIntersection()
                 print "Now driving toward intersection"
             if self.mode == "driveToIntersection" and self.newOdomTemp:
                 self.driveToIntersection()
             if self.mode == "rotateAtIntersection" and self.newOdomTemp:
                 self.rotateAtIntersection()
+            if self.newImageTemp:
+                self.findLine()
             if self.newImageTemp and self.mode == "lineFollowing":
                 self.lineFollow()
 
     def driveToIntersection(self):
-        distTravelled = self.euclidDistance(self.xPosition,self.yPosition,self.intersection.odom.pose.pose.position.x,self.intersection.odom.pose.pose.position.y)
-        if distTravelled > (self.intersection.dist - .01):
+        distTravelled = self.euclidDistance(self.xPosition,self.yPosition,self.intersection.x,self.intersection.y)
+        print "distToIntersection: " + str(distTravelled)
+        if abs(distTravelled) < (.02):
             self.sendCommand(0, 0)
             self.mode = "rotateAtIntersection"
             print "now rotating at intersection"
         else:
             self.sendCommand(.10, 0)
 
-    def rotateAtInteresection(self):
-        angDif = abs((self.zAngle + 2*math.pi)%(2*math.pi) - (self.chosenExit + 2*math.pi)%(2*math.pi))
+    def rotateAtIntersection(self):
+       
+
+        #angDif = abs((self.zAngle + 2*math.pi)%(2*math.pi) - (self.chosenExit[0] + 2*math.pi)%(2*math.pi))
+        dist = (self.chosenExit[0] - self.zAngle) #Angular deviation from goal
+
+        #This block governs calculating the proper angular velocity
+        if  abs(dist) < math.pi: #If we are less than 180 degrees off spin in this direction
+            angDif = dist
+        else: #The case where we are more than 180 degrees off spin the opposite direction
+            if dist < 0:
+                angDif = (2*math.pi - abs(dist)) #Ensure proportionality relative to actual angle deviation
+            else:
+                angDif = -1.0 * (2*math.pi - abs(dist))
+
         print "angDif: " + str(angDif)
-        if angDif < (math.pi/36.0):
+        if self.averageLineIndex == None:
+            lineInRange = False
+        elif (self.averageLineIndex - 320) < 100:
+            lineInRange = True
+        else: 
+            lineInRange = False
+
+
+        if abs(angDif) < (math.pi/6) and lineInRange:
             self.sendCommand(0, 0)
             self.mode = "lineFollowing"
-            print "Now Line Following"
+            self.initializeLineFollowPID()
+            #print "Now Line Following"
         else:
-            self.sendCommand(0, math.copysign(.20, self.chosenExit))
+            self.sendCommand(0, math.copysign(.20, self.chosenExit[1]))
 
     def intersectionCallback(self,msg):
         print msg        
         self.intersection = msg
-        self.chosenExit = random.choice(self.intersection.exits)
-        self.intersectionDetected = True
-        print "exitChosen: " + str(self.chosenExit)
+        ranInt = random.randrange(0,len(self.intersection.exits))
+        self.chosenExit = (msg.exits[ranInt],msg.raw_exits[ranInt])
 
-    def lineFollow(self):
-        smallCopy = self.cv_imageTemp[350:480]
+        getTurnServiceProxy = rospy.ServiceProxy('getTurn', intersectionFoundGetTurn)
+        resp1 = getTurnServiceProxy(x = msg.x, y = msg.y, exits = msg.exits, exits_raw = msg.raw_exits, current_path_exit = msg.current_path_exit)
+        self.chosenExit = (resp1.exit_chosen,resp1.exit_chosen_raw)
+
+        self.intersectionDetected = True
+        print "exitChosen: " + str(resp1.exit_chosen_raw)
+        distTravelled = self.euclidDistance(self.xPosition,self.yPosition,self.intersection.x,self.intersection.y)
+        print "distToIntersectionInitial: " + str(distTravelled)
+        print "calculated Dist: " + str(self.intersection.distance)
+
+    def findLine(self):
+        smallCopy = self.cv_imageTemp[350:478]
 
         hsv = cv2.cvtColor(smallCopy, cv2.COLOR_BGR2HSV)
 
@@ -183,32 +233,34 @@ class controller:
                 num.append(i+1)
 
         try:
-            averageLineIndex = (float(sum(num))/len(num))
-            print "averageLineIndex: " + str(averageLineIndex)
+            self.averageLineIndex = (float(sum(num))/len(num))
+            print "averageLineIndex: " + str(self.averageLineIndex)
         except:
+            self.averageLineIndex = None
             print "no line found"
             return
 
-                #get and set PID control constants
-        pidP100 = cv2.getTrackbarPos('pidP','image')
-        pidI100 = cv2.getTrackbarPos('pidI','image')
-        pidD100 = cv2.getTrackbarPos('pidD','image')
+    def lineFollow(self):
+        if self.averageLineIndex != None:
+            #get and set PID control constants
+            pidP100 = cv2.getTrackbarPos('pidP','image')
+            pidI100 = cv2.getTrackbarPos('pidI','image')
+            pidD100 = cv2.getTrackbarPos('pidD','image')
 
-        pidP = float(pidP100)/100
-        pidI = float(pidI100)/100
-        pidD = float(pidD100)/100
+            pidP = float(pidP100)/100
+            pidI = float(pidI100)/100
+            pidD = float(pidD100)/100
 
-        self.pid.setKp(pidP)
-        self.pid.setKi(pidI)
-        self.pid.setKd(pidD)
+            self.pid.setKp(pidP)
+            self.pid.setKi(pidI)
+            self.pid.setKd(pidD)
 
-        #use the pid controller to determine the anglular velocity
-        ang = self.pid.update(averageLineIndex)/1000
+            #use the pid controller to determine the anglular velocity
+            ang = self.pid.update(self.averageLineIndex)/1000
 
-        speed = cv2.getTrackbarPos('speed','image')/100.0
+            speed = cv2.getTrackbarPos('speed','image')/100.0
 
-        self.sendCommand(speed, ang)
-        
+            self.sendCommand(speed, ang)
 
     def initializeLineFollowPID(self):
         self.pid = PID(P=2.0, I=0.0, D=1.0, Derivator=0, Integrator=0, Integrator_max=500, Integrator_min=-500)
@@ -222,6 +274,15 @@ class controller:
     def stop(self, x):
         if x == 0:
             self.sendCommand(0,0)
+
+    def setTask(self,x):
+        if x == 0:
+            task = "Random"
+        elif x == 1:
+            task = "Map"
+        elif x == 2:
+            task = "Path"
+        self.taskPub.publish(task)
     
     #odometry callback
     def odometryCb(self,odom):
@@ -241,18 +302,18 @@ class controller:
             print e
                    
         #display image recieved
-        cv2.imshow('Video1', self.cv_image)
+        #cv2.imshow('Video1', self.cv_image)
 
         cv2.waitKey(3)
 
     #send movement command to robot
     def sendCommand(self, lin, ang):
-        print "speed: " + str(lin) + ", " + "ang: " + str(ang)
+        #print "speed: " + str(lin) + ", " + "ang: " + str(ang)
         if cv2.getTrackbarPos(self.switchM,'image') == 1:
             twist = Twist()
             twist.linear.x = lin; twist.linear.y = 0; twist.linear.z = 0
             twist.angular.x = 0; twist.angular.y = 0; twist.angular.z = ang
-            self.pub.publish(twist)
+            self.velPub.publish(twist)
 
     #function that makes print statements switchable
     def dprint(self, print_message):
@@ -267,7 +328,7 @@ def main(args):
     ic = controller(False)
 
     #set ROS refresh rate
-    r = rospy.Rate(30)
+    r = rospy.Rate(45)
 
     #keep program running until shutdown
     while not(rospy.is_shutdown()):
