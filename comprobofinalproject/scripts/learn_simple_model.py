@@ -50,17 +50,35 @@ descriptor_name = 'SIFT'
 detector = cv2.FeatureDetector_create(descriptor_name)
 extractor = cv2.DescriptorExtractor_create(descriptor_name)
 
-for i in range(1,6):
+
+for i in range(1,21):
 	# file_name = join(join('./101_ObjectCategories/test',category),image)
-	im = cv2.imread("test/" + "stop" + str(i) + ".jpg")
+	#im = cv2.imread("test/" + "not" + str(i) + ".jpg")
+	#im = cv2.imread("OutSampleStopSigns/" + str(i) + ".jpg")
+	if i<10:
+		#im = cv2.imread("101_ObjectCategories/stop_sign/" + "image_000" + str(i) + ".jpg")
+		#im = cv2.imread("101_ObjectCategories/crab/" + "image_000" + str(i) + ".jpg")
+		im = cv2.imread("101_ObjectCategories/car_side/" + "image_000" + str(i) + ".jpg")
+	else:
+		#im = cv2.imread("101_ObjectCategories/stop_sign/" + "image_00" + str(i) + ".jpg")
+		#im = cv2.imread("101_ObjectCategories/crab/" + "image_00" + str(i) + ".jpg")
+		im = cv2.imread("101_ObjectCategories/car_side/" + "image_00" + str(i) + ".jpg")
 	# print im
 	im_bw = cv2.cvtColor(im,cv2.COLOR_BGR2GRAY)
 	kp = detector.detect(im_bw)
 	dc, des = extractor.compute(im_bw,kp)
+	#print des.shape
 	# stash the descriptors in a dictionary for later processing
-	guess = model.predict(des)
-	print guess
-	print mode(guess)
+	#guess = model.predict(des)
+
+	des_avg = des.mean(axis = 0)
+	des_avg = des_avg.reshape((128,1)).transpose()
+	#print des_avg.shape
+
+	guess = model.predict(des_avg)
+	guess_prob = model.predict_proba(des_avg)
+	print i, guess, guess_prob	
+	#print mode(guess)
 
 
 # print out accurcies by category
