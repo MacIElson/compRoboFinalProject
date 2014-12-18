@@ -196,12 +196,14 @@ class LineFinder:
 							angles.append(self.exitAngle(each,intersectionPoint))
 							#angles.append(self.exitAngle(each,intersectionPoint))
 							cv2.line(corner_pic,intersectionPoint,each,(0,255,0),2)
-						angles.remove(max(angles, key = lambda x: abs(x)))
+						current_raw = max(angles, key = lambda x: abs(x))
+						angles.remove(current_raw)
 						print angles
 						odom_angles = [(z + angle + math.pi) % (2 * math.pi) - math.pi for angle in angles]
+						odom_current = (z + current_raw + math.pi) % (2 * math.pi)
 						
 						print dist
-						inter = Intersection(x = x, y = y, z = z, exits = odom_angles, raw_exits=angles , current_path_exit = ,distance = dist,odom = odom)
+						inter = Intersection(x = x, y = y, z = z, exits = odom_angles, raw_exits=angles , current_path_exit = odom_current,distance = dist,odom = odom)
 
 						self.dist_pub.publish(inter)
 				else:
