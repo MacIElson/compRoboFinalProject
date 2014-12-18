@@ -44,6 +44,8 @@ class controller:
         self.bridge = CvBridge()
 
         self.createTrackbars()
+
+        self.speed = 1
         
         #subscribe tocamera images
         self.image_sub = rospy.Subscriber("camera/image_raw", Image, self.recieveImage)
@@ -133,7 +135,6 @@ class controller:
             self.xPositionTemp = self.xPosition
             self.yPositionTemp = self.yPosition
             self.cv_imageTemp = copy.copy(self.cv_image)
-
             
             self.signTimer -= 1
             print self.signTimer
@@ -340,6 +341,7 @@ class controller:
 
     #send movement command to robot
     def sendCommand(self, lin, ang):
+        lin = lin*self.speed
         #print "speed: " + str(lin) + ", " + "ang: " + str(ang)
         lin = self.speed*lin
         if cv2.getTrackbarPos(self.switchM,'image') == 1:
