@@ -56,10 +56,10 @@ class controller:
         self.xPosition = None
         self.yPosition = None
 
-        self.inter_sub = rospy.Subscriber("/intersection",Intersection,self.intersectionCallback)
+        self.visPub = rospy.Publisher("/mapVisual", String, queue_size=10)
 
         self.taskPub = rospy.Publisher('/task', String, queue_size=10)
-        self.taskPub.publish(task)
+        self.taskPub.publish("Random")
 
         #set up publisher to send commands to the robot
         self.velPub = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
@@ -86,9 +86,9 @@ class controller:
         cv2.createTrackbar(self.switchM, 'image',0,1,self.stop)
         cv2.setTrackbarPos(self.switchM,'image',1)
 
-        self.switchTask = 'Task \n 0 : Random \n1 : BuildMap\n2 : GoToPoint'
-        cv2.createTrackbar(self.switchM, 'image',0,2,self.setTask)
-        cv2.setTrackbarPos(self.switchM,'image',0)
+        self.switchTask = 'Task \n 0 : Random \n1 : BuildMap \n2 : GoToPoint'
+        cv2.createTrackbar(self.switchTask, 'image',0,2,self.setTask)
+        cv2.setTrackbarPos(self.switchTask,'image',0)
 
         cv2.createTrackbar('speed','image',0,200,nothing)
         cv2.setTrackbarPos('speed','image',10)
@@ -137,6 +137,7 @@ class controller:
                 print "Now driving toward intersection"
             if self.mode == "driveToIntersection" and self.newOdomTemp:
                 self.driveToIntersection()
+
             if self.mode == "rotateAtIntersection" and self.newOdomTemp:
                 self.rotateAtIntersection()
             if self.newImageTemp:
@@ -147,32 +148,30 @@ class controller:
     def driveToIntersection(self):
         distTravelled = self.euclidDistance(self.xPosition,self.yPosition,self.intersection.x,self.intersection.y)
         print "distToIntersection: " + str(distTravelled)
-        if abs(distTravelled) < (.02):
+        if abs(distTravelled) < (.025):
             self.sendCommand(0, 0)
             self.mode = "rotateAtIntersection"
+            self.angDif = math.atan2(math.sin(self.chosenExit-self.zAngle), math.cos(self.chosenExit-self.zAngle))
             print "now rotating at intersection"
         else:
-            self.sendCommand(.10, 0)
+            angleToGoal = math.atan2(self.intersection.y-self.yPosition,self.intersection.x - self.xPosition)
+            angDif = math.atan2(math.sin(angleToGoal-self.zAngle), math.cos(angleToGoal-self.zAngle))
+            print "AngDif: " + str(angDif)
+            turn = math.copysign(.10, angDif)
+
+            if abs(angDif) > math.pi/72:
+                self.sendCommand(.10, turn)
+            else:
+                self.sendCommand(.10, 0)
 
     def rotateAtIntersection(self):
        
-
-        #angDif = abs((self.zAngle + 2*math.pi)%(2*math.pi) - (self.chosenExit[0] + 2*math.pi)%(2*math.pi))
-        dist = (self.chosenExit[0] - self.zAngle) #Angular deviation from goal
-
-        #This block governs calculating the proper angular velocity
-        if  abs(dist) < math.pi: #If we are less than 180 degrees off spin in this direction
-            angDif = dist
-        else: #The case where we are more than 180 degrees off spin the opposite direction
-            if dist < 0:
-                angDif = (2*math.pi - abs(dist)) #Ensure proportionality relative to actual angle deviation
-            else:
-                angDif = -1.0 * (2*math.pi - abs(dist))
+        angDif = math.atan2(math.sin(self.chosenExit-self.zAngle), math.cos(self.chosenExit-self.zAngle))
 
         print "angDif: " + str(angDif)
         if self.averageLineIndex == None:
             lineInRange = False
-        elif (self.averageLineIndex - 320) < 100:
+        elif (self.averageLineIndex - 320) < 250:
             lineInRange = True
         else: 
             lineInRange = False
@@ -184,23 +183,27 @@ class controller:
             self.initializeLineFollowPID()
             #print "Now Line Following"
         else:
-            self.sendCommand(0, math.copysign(.20, self.chosenExit[1]))
+            self.sendCommand(0, math.copysign(.20, self.angDif))
 
     def intersectionCallback(self,msg):
         print msg        
+        try:
+            if self.euclidDistance(self.intersection.x,self.intersection.y,msg.x,msg.y) < .05:
+                return
+        except:
+            pass
+
         self.intersection = msg
-        ranInt = random.randrange(0,len(self.intersection.exits))
-        self.chosenExit = (msg.exits[ranInt],msg.raw_exits[ranInt])
 
         getTurnServiceProxy = rospy.ServiceProxy('getTurn', intersectionFoundGetTurn)
         resp1 = getTurnServiceProxy(x = msg.x, y = msg.y, exits = msg.exits, exits_raw = msg.raw_exits, current_path_exit = msg.current_path_exit)
-        self.chosenExit = (resp1.exit_chosen,resp1.exit_chosen_raw)
+        self.chosenExit = resp1.exit_chosen
 
         self.intersectionDetected = True
-        print "exitChosen: " + str(resp1.exit_chosen_raw)
         distTravelled = self.euclidDistance(self.xPosition,self.yPosition,self.intersection.x,self.intersection.y)
         print "distToIntersectionInitial: " + str(distTravelled)
         print "calculated Dist: " + str(self.intersection.distance)
+        self.visPub.publish("makeMap")
 
     def findLine(self):
         smallCopy = self.cv_imageTemp[350:478]
@@ -234,10 +237,10 @@ class controller:
 
         try:
             self.averageLineIndex = (float(sum(num))/len(num))
-            print "averageLineIndex: " + str(self.averageLineIndex)
+            #print "averageLineIndex: " + str(self.averageLineIndex)
         except:
             self.averageLineIndex = None
-            print "no line found"
+            #print "no line found"
             return
 
     def lineFollow(self):
@@ -328,7 +331,7 @@ def main(args):
     ic = controller(False)
 
     #set ROS refresh rate
-    r = rospy.Rate(45)
+    r = rospy.Rate(30)
 
     #keep program running until shutdown
     while not(rospy.is_shutdown()):

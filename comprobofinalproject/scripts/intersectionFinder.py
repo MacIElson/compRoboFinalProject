@@ -20,10 +20,15 @@ class LineFinder:
 		self.image = None
 		self.odometry = None
 
-		self.polynomial = [2.22317146e-09,-3.24371120e-06,1.80937752e-03,-4.84182280e-01,7.86062005e+01]
-		self.ignoredBorder = [200,25,50,50]
+		self.polynomial = [2.61917447e-09,-3.67942412e-06,1.97005874e-03,-5.07594827e-01,8.01298724e+01]
+
+
+
+		self.ignoredBorder = [180,25,50,50]
 		self.found = 0
-		self.exitBorder = [200,50,50,50]
+		self.exitBorder = [140,50,100,100]
+		self.exitCrop = [100,1,50,50]
+		self.hsv= {'h':(172,14),'s':(120,255),'v':(80,255)}
 
 		self.createTrackbars()
 
@@ -120,22 +125,22 @@ class LineFinder:
 				#RED MASKING TAPE HSV
 				hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
-				lower1 = np.array([172,100,100])
-				upper1 = np.array([180,255,255])
+				lower1 = np.array([self.hsv['h'][0],self.hsv['s'][0],self.hsv['v'][0]])
+				upper1 = np.array([180,self.hsv['s'][1],self.hsv['v'][1]])
 
 				mask1 = cv2.inRange(hsv, lower1, upper1)
 
-				lower2 = np.array([-1,100,100])
-				upper2 = np.array([13,255,255])
+				lower2 = np.array([-1,self.hsv['s'][0],self.hsv['v'][0]])
+				upper2 = np.array([self.hsv['h'][1],self.hsv['s'][1],self.hsv['v'][1]])
 				
 				mask2 = cv2.inRange(hsv, lower2, upper2)
 
 				mask = cv2.add(mask1,mask2)
 				
-				borderless = mask[self.ignoredBorder[0]:-self.ignoredBorder[1], self.ignoredBorder[2]:-self.ignoredBorder[3]]
+				borderless = copy.deepcopy(mask[self.ignoredBorder[0]:-self.ignoredBorder[1], self.ignoredBorder[2]:-self.ignoredBorder[3]])
 				cv2.imshow("mask",borderless)
 				#corner_gray = cv2.cvtColor(borderless,cv2.COLOR_BGR2GRAY)
-				dst = cv2.cornerHarris(borderless,30,3,0.2)
+				dst = cv2.cornerHarris(borderless,30,5,.1)
 				dst = cv2.dilate(dst,None)
 
 
@@ -159,12 +164,15 @@ class LineFinder:
 
 
 						#Crop mask
-						border = mask
+						border = copy.deepcopy(mask)
 						#Revove top
-						border[:150,:]=0
+						border[:self.exitCrop[0],:]=0
+						border[:,:self.exitCrop[2]]=0
+						border[-self.exitCrop[1]:,:]=0
+						border[:,-self.exitCrop[3]:]=0
 						border[self.exitBorder[0]:-self.exitBorder[1],self.exitBorder[2]:-self.exitBorder[3]] = 0
-
-						exits = self.exitPathCenters(mask)
+						cv2.imshow("exits",border)
+						exits = self.exitPathCenters(border)
 
 						if(len(exits) == 3 and len(centers) == 2):
 							center_slope = self.slope(centers[0],centers[1])
@@ -196,21 +204,27 @@ class LineFinder:
 							angles.append(self.exitAngle(each,intersectionPoint))
 							#angles.append(self.exitAngle(each,intersectionPoint))
 							cv2.line(corner_pic,intersectionPoint,each,(0,255,0),2)
-						current_raw = max(angles, key = lambda x: abs(x))
-						angles.remove(current_raw)
-						print angles
+						if len(angles) > 0:
+							current_raw = max(angles, key = lambda x: abs(x))
+							angles.remove(current_raw)
+						else:
+							current_raw = 0.0
+						print "raw",angles
 						odom_angles = [(z + angle + math.pi) % (2 * math.pi) - math.pi for angle in angles]
-						odom_current = (z + current_raw + math.pi) % (2 * math.pi)
-						
-						print dist
+						odom_current = (z + current_raw + math.pi) % (2 * math.pi) - math.pi
+						print "odom",odom_angles
+						print "z",z
+						print "dist",dist
+						print "current_shit_exit",odom_current
 						inter = Intersection(x = x, y = y, z = z, exits = odom_angles, raw_exits=angles , current_path_exit = odom_current,distance = dist,odom = odom)
 
 						self.dist_pub.publish(inter)
 				else:
+					#print "Lost intersection"
 					self.found = 0
 
 				cv2.imshow("frame",corner_pic)
-				cv2.waitKey(50)
+				cv2.waitKey(30)
 				r.sleep()
 
 
