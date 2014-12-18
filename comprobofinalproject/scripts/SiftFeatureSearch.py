@@ -13,7 +13,7 @@ f = open('SIFT_features.pickle','wt')
 
 cache = {}
 
-categories = ["stop_sign",'car_side', "crab"]
+categories = ['car_side', 'stop_sign']
 
 for category in categories:	
 	images = listdir(join('./101_ObjectCategories',category))
