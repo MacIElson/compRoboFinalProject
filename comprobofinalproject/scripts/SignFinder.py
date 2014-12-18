@@ -22,7 +22,10 @@ class SignWatcher:
     def __init__(self, draw = False):      
         # The value of this determine how sure we are of seeing the stop sign
         # 0 -> no stop sign, 1 -> possible stop sign, 2 -> probably, 3 -> almost definitely  
-        self.stop_detected = 0 
+        self.stop_detected = 0
+        self.no_find_streak = 0
+        self.broadcast = True
+        # to not publish multiples within a time period
 
         # number of images recieved
         self.image_count = 0
@@ -71,9 +74,10 @@ class SignWatcher:
         #loading image 
         signImg = cv2.imread( signName + ".png",0)
         # Getting KP and Descriptors
+        print signName
         signKP, signDes = self.sift.detectAndCompute(signImg,None)
         # fill a dict with sign infp 
-        sign = {"img": signImg, "name":signName, "keypoints":signKP, "descriptors": signDes}
+        sign = {"no_find":0, "broadcast":True, "img": signImg, "name":signName, "keypoints":signKP, "descriptors": signDes}
         return sign
 
 
@@ -123,7 +127,6 @@ class SignWatcher:
     def checkSign(self, sign, imageKP, imageDes):
         #returns all the matches between the images
         matches = self.flann.knnMatch(sign["descriptors"],imageDes,k=2)
-
         # store all the good matches as per Lowe's ratio test.
         good = []
         for m,n in matches:
@@ -147,6 +150,10 @@ class SignWatcher:
             isRectangle, meanSide = self.isRectangle(dst)          
             if isRectangle:  
                 print sign["name"]
+                sign["no_find"] = 0
+                if sign["broadcast"]:
+                    self.signFound(sign["name"])
+                    sign["broadcast"] = False
                 # cv2.polylines(self.cv_image,[np.int32(dst)],True,255,3)
                 
                 # add the drawings of where the sign is
@@ -166,19 +173,24 @@ class SignWatcher:
             #             self.signFound(stopDist)    
                 
         else:
+            sign["no_find"] +=1 
+            if sign["no_find"] > 5:
+                sign["broadcast"] = True
             # If there were not enough matches lower the stop_detected by 1. 
             # Don't lower when enough matches, but no square, because often 
-            matchesMask = None
+            # matchesMask = None
             # if self.stop_detected > 0:
             #     self.stop_detected -= 1
             #     if self.stop_detected is 1:
             #         print "stop sign lost"
 
     # When sign is found, this sends the current odom and the distance to the sign in meters
-    def signFound(self, stopDist):
-        odom = str(self.image_odom[0]) + ","+ str(self.image_odom[1])
-        message = odom + "," + str(0.0254*stopDist)
+    def signFound(self, message):
         self.sign_found_pub.publish(message)
+        print 'supdogg'
+        # odom = str(self.image_odom[0]) + ","+ str(self.image_odom[1])
+        # message = odom + "," + str(0.0254*stopDist)
+        # self.sign_found_pub.publish(message)
         
     # Estimates the range in inches of the neato to the stop sign
     def estRange(self, pixelDist):

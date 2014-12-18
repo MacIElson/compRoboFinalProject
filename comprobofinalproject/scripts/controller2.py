@@ -35,6 +35,7 @@ class controller:
 
         # if true, we print what is going on
         self.verbose = verbose
+        self.speed = 1
 
         # most recent raw CV image
         self.cv_image = None
@@ -50,6 +51,7 @@ class controller:
         #subscribe to intersection
         self.inter_sub = rospy.Subscriber("/intersection",Intersection, self.intersectionCallback)
 
+        self.sign_sub = rospy.Subscriber("/sign_found", String, self.signFound)
         #subscribe to odometry
         rospy.Subscriber('odom',Odometry,self.odometryCb)
         self.newOdom = False
@@ -71,6 +73,9 @@ class controller:
         self.initializeLineFollowPID()
 
         rospy.wait_for_service('getTurn')
+
+        self.signTimer = 0
+        self.signDetected = False
 
         cv2.waitKey(3)
 
@@ -129,8 +134,13 @@ class controller:
             self.yPositionTemp = self.yPosition
             self.cv_imageTemp = copy.copy(self.cv_image)
 
-            if self.signDetectedTemp:
-                pass
+            
+            self.signTimer -= 1
+            print self.signTimer
+            if self.signTimer <= 0:
+                self.speed = 1
+                self.signDetected = False
+
             if self.intersectionDetectedTemp:
                 self.mode = "driveToIntersection"
                 self.driveToIntersection()
@@ -144,6 +154,25 @@ class controller:
                 self.findLine()
             if self.newImageTemp and self.mode == "lineFollowing":
                 self.lineFollow()
+
+    def signFound(self,msg):
+        #["yield", "stopinvert", "police", "speedlimit", "oneway"] 
+        print "Sign Found"
+        if msg.data == "stopinvert":
+            self.speed = 0
+            self.signTimer = 30
+            self.signDetected = True 
+            print "Stop!!!"
+        elif msg.data == "police":
+            self.speed = .5
+            self.signTimer = 60
+            self.signDetected = True 
+            print "Police!!!"
+        elif msg.data == "speedlimit":
+            self.speed = 1.2
+            self.signTimer = 60
+            self.signDetected = True 
+            print "Speed up!!!"
 
     def driveToIntersection(self):
         distTravelled = self.euclidDistance(self.xPosition,self.yPosition,self.intersection.x,self.intersection.y)
@@ -312,6 +341,7 @@ class controller:
     #send movement command to robot
     def sendCommand(self, lin, ang):
         #print "speed: " + str(lin) + ", " + "ang: " + str(ang)
+        lin = self.speed*lin
         if cv2.getTrackbarPos(self.switchM,'image') == 1:
             twist = Twist()
             twist.linear.x = lin; twist.linear.y = 0; twist.linear.z = 0
