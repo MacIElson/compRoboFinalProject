@@ -20,13 +20,6 @@ class SignWatcher:
 
 
     def __init__(self, draw = False):      
-        # The value of this determine how sure we are of seeing the stop sign
-        # 0 -> no stop sign, 1 -> possible stop sign, 2 -> probably, 3 -> almost definitely  
-        self.stop_detected = 0
-        self.no_find_streak = 0
-        self.broadcast = True
-        # to not publish multiples within a time period
-
         # number of images recieved
         self.image_count = 0
         
@@ -56,7 +49,8 @@ class SignWatcher:
         # most recent raw CV image
         self.cv_image = None
         self.bridge = CvBridge()
-       
+
+        #Not currently used, but kept just in case       
         #subscribe to odometry
         rospy.Subscriber('odom',Odometry,self.odometryCb)
         self.xPosition = -1.0
@@ -74,10 +68,11 @@ class SignWatcher:
         #loading image 
         signImg = cv2.imread( signName + ".png",0)
         # Getting KP and Descriptors
-        print signName
         signKP, signDes = self.sift.detectAndCompute(signImg,None)
-        # fill a dict with sign infp 
-        sign = {"no_find":0, "broadcast":True, "img": signImg, "name":signName, "keypoints":signKP, "descriptors": signDes}
+        # fill a dict with sign info
+        # no_find_streak: how many photos since this was found. We only want to broadcast when we find a new sign so make sure streak is long enough
+        # broadcast: whether or not should publish if this sign found 
+        sign = {"no_find_streak":0, "broadcast":True, "img": signImg, "name":signName, "keypoints":signKP, "descriptors": signDes}
         return sign
 
 
@@ -149,48 +144,28 @@ class SignWatcher:
             #check if the matching object we've found is a square
             isRectangle, meanSide = self.isRectangle(dst)          
             if isRectangle:  
-                print sign["name"]
-                sign["no_find"] = 0
+                # set streak since this sign found to 0
+                sign["no_find_streak"] = 0
+
+                # if should broadcast, broadcasts
                 if sign["broadcast"]:
                     self.signFound(sign["name"])
+                    #resets broadcast
                     sign["broadcast"] = False
-                # cv2.polylines(self.cv_image,[np.int32(dst)],True,255,3)
                 
                 # add the drawings of where the sign is
                 self.drawings.append({"fn":cv2.polylines,"args":([np.int32(dst)],True,255,3)})
                 for pt in dst_pts:
                     self.drawings.append({"fn":cv2.circle,"args":((pt[0][0],pt[0][1]), 2,255, -1 )})
-                    
-            #     #calculate the distance to the stopsign
-            #     stopDist = self.estRange(meanSide)
-
-            #     # now we have found this is a legitimate match (found object, object is square, square has sides with length over 1 pixel)
-            #     # increment stop_detected. If it is above the threshold, stop sign is found. 
-            #     if self.stop_detected < 3:
-            #         self.stop_detected += 1
-            #         if self.stop_detected is 2:
-            #             print "stop sign found"
-            #             self.signFound(stopDist)    
-                
+                                    
         else:
-            sign["no_find"] +=1 
-            if sign["no_find"] > 5:
+            sign["no_find_streak"] +=1 
+            if sign["no_find_streak"] > 5:
                 sign["broadcast"] = True
-            # If there were not enough matches lower the stop_detected by 1. 
-            # Don't lower when enough matches, but no square, because often 
-            # matchesMask = None
-            # if self.stop_detected > 0:
-            #     self.stop_detected -= 1
-            #     if self.stop_detected is 1:
-            #         print "stop sign lost"
-
-    # When sign is found, this sends the current odom and the distance to the sign in meters
+            
+    # When sign is found, this sends the sign name
     def signFound(self, message):
         self.sign_found_pub.publish(message)
-        print 'supdogg'
-        # odom = str(self.image_odom[0]) + ","+ str(self.image_odom[1])
-        # message = odom + "," + str(0.0254*stopDist)
-        # self.sign_found_pub.publish(message)
         
     # Estimates the range in inches of the neato to the stop sign
     def estRange(self, pixelDist):
@@ -208,7 +183,7 @@ class SignWatcher:
         minSide = min(sides)
         meanSide = np.mean(sides)
 
-        # if the any side if more than 10% over or under the mean or if the sides are less than a pixel long, return false
+        # if the any side if more than 300% over or 20% under the mean or if the sides are less than a pixel long, return false
         if maxSide > meanSide*3 or minSide < meanSide *.2 or meanSide < 1:
             return False, meanSide 
         
