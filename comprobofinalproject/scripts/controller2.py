@@ -35,7 +35,6 @@ class controller:
 
         # if true, we print what is going on
         self.verbose = verbose
-        self.speed = 1
 
         # most recent raw CV image
         self.cv_image = None
@@ -53,31 +52,36 @@ class controller:
         #subscribe to intersection
         self.inter_sub = rospy.Subscriber("/intersection",Intersection, self.intersectionCallback)
 
-        self.sign_sub = rospy.Subscriber("/sign_found", String, self.signFound)
-        #subscribe to odometry
+        
+
+        #subscribe to odometry and initialize constants
         rospy.Subscriber('odom',Odometry,self.odometryCb)
         self.newOdom = False
         self.xPosition = None
         self.yPosition = None
 
+        #publisher to call for a new visual map to be made
         self.visPub = rospy.Publisher("/mapVisual", String, queue_size=10)
 
+        #initalize publisher that let's nodes know what the current task is ie (Mapping, RandomlyMoving, PathPlanning)
         self.taskPub = rospy.Publisher('/task', String, queue_size=10)
         self.taskPub.publish("Random")
 
         #set up publisher to send commands to the robot
         self.velPub = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
 
+        #subscribe to the sign found topic and intialize constants
+        self.sign_sub = rospy.Subscriber("/sign_found", String, self.signFound)
         self.signDetected = False
         self.intersectionDetected = False
+        self.signTimer = 0
 
+        #initialize the PID controller and se the mode to line following
         self.mode = "lineFollowing"
         self.initializeLineFollowPID()
 
+        #ensure service getTurn in running
         rospy.wait_for_service('getTurn')
-
-        self.signTimer = 0
-        self.signDetected = False
 
         cv2.waitKey(3)
 
@@ -124,6 +128,7 @@ class controller:
 
     def mainloop(self):
         if cv2.getTrackbarPos(self.switchC,'image') == 1:
+            #store temporary versions of variables in case they change mid loop
             self.newOdomTemp = self.newOdom
             self.newImageTemp = self.newImage
             self.intersectionDetectedTemp = self.intersectionDetected
@@ -136,11 +141,18 @@ class controller:
             self.yPositionTemp = self.yPosition
             self.cv_imageTemp = copy.copy(self.cv_image)
             
+            #decrement signTimer each loop through
             self.signTimer -= 1
             print self.signTimer
+
+
             if self.signTimer <= 0:
+                #reset the sign parameters
                 self.speed = 1
                 self.signDetected = False
+
+            if self.newImageTemp:
+                self.findLine()
 
             if self.intersectionDetectedTemp:
                 self.mode = "driveToIntersection"
@@ -148,11 +160,8 @@ class controller:
                 print "Now driving toward intersection"
             if self.mode == "driveToIntersection" and self.newOdomTemp:
                 self.driveToIntersection()
-
             if self.mode == "rotateAtIntersection" and self.newOdomTemp:
                 self.rotateAtIntersection()
-            if self.newImageTemp:
-                self.findLine()
             if self.newImageTemp and self.mode == "lineFollowing":
                 self.lineFollow()
 
@@ -160,45 +169,63 @@ class controller:
         #["yield", "stopinvert", "police", "speedlimit", "oneway"] 
         print "Sign Found"
         if msg.data == "stopinvert":
+            #stop sign found
             self.speed = 0
             self.signTimer = 30
             self.signDetected = True 
             print "Stop!!!"
         elif msg.data == "police":
+            #police spotted
             self.speed = .5
             self.signTimer = 60
             self.signDetected = True 
             print "Police!!!"
         elif msg.data == "speedlimit":
+            #speed limit sign found
             self.speed = 1.2
             self.signTimer = 60
             self.signDetected = True 
             print "Speed up!!!"
 
     def driveToIntersection(self):
-        distTravelled = self.euclidDistance(self.xPosition,self.yPosition,self.intersection.x,self.intersection.y)
-        print "distToIntersection: " + str(distTravelled)
-        if abs(distTravelled) < (.025):
+
+
+        distFromIntersection = self.euclidDistance(self.xPosition,self.yPosition,self.intersection.x,self.intersection.y)
+        print "distFromIntersection: " + str(distFromIntersection)
+
+        if abs(distFromIntersection) < (.025):
+            #if distance from intersection less than 2.5 cm
             self.sendCommand(0, 0)
             self.mode = "rotateAtIntersection"
+
+            #find the signed difference in current heading and desired heading
             self.angDif = math.atan2(math.sin(self.chosenExit-self.zAngle), math.cos(self.chosenExit-self.zAngle))
             print "now rotating at intersection"
         else:
+            #find angle in odom frame of the line from current position to intersection position
             angleToGoal = math.atan2(self.intersection.y-self.yPosition,self.intersection.x - self.xPosition)
+
+            #find the signed difference in current heading and desired heading
             angDif = math.atan2(math.sin(angleToGoal-self.zAngle), math.cos(angleToGoal-self.zAngle))
             print "AngDif: " + str(angDif)
+
+            #use the signed angle difference to decide rotation direction
             turn = math.copysign(.10, angDif)
 
+
             if abs(angDif) > math.pi/72:
+                #if the magnitude of the angular difference between the current and desired heading is greater than pi/72, ocrrect course
                 self.sendCommand(.10, turn)
             else:
+                #facing the intersection, drive forward to it
                 self.sendCommand(.10, 0)
 
     def rotateAtIntersection(self):
-       
+        #find the signed difference in current heading and desired heading
         angDif = math.atan2(math.sin(self.chosenExit-self.zAngle), math.cos(self.chosenExit-self.zAngle))
-
         print "angDif: " + str(angDif)
+
+        #can the robot see a line
         if self.averageLineIndex == None:
             lineInRange = False
         elif (self.averageLineIndex - 320) < 250:
@@ -208,31 +235,41 @@ class controller:
 
 
         if abs(angDif) < (math.pi/6) and lineInRange:
+            #Chosen Exit found, initializing line following
             self.sendCommand(0, 0)
             self.mode = "lineFollowing"
             self.initializeLineFollowPID()
-            #print "Now Line Following"
         else:
+            #use original direction calculated in case the angle measurement is slightly off (allows the neato to keep looking past the calcualted angle)
             self.sendCommand(0, math.copysign(.20, self.angDif))
 
     def intersectionCallback(self,msg):
         print msg        
         try:
+            #check if interesection is the same as the last one found
             if self.euclidDistance(self.intersection.x,self.intersection.y,msg.x,msg.y) < .05:
+                #don't reaact to the same interesection found twice
                 return
         except:
+            #in case there is no previous intersection and thus self.intersection does not exist
             pass
 
+        #set the intersection  to the found intersection
         self.intersection = msg
 
+        #get what direction to turn
         getTurnServiceProxy = rospy.ServiceProxy('getTurn', intersectionFoundGetTurn)
         resp1 = getTurnServiceProxy(x = msg.x, y = msg.y, exits = msg.exits, exits_raw = msg.raw_exits, current_path_exit = msg.current_path_exit)
         self.chosenExit = resp1.exit_chosen
 
         self.intersectionDetected = True
+
+        #calculate and display distance from intersection
         distTravelled = self.euclidDistance(self.xPosition,self.yPosition,self.intersection.x,self.intersection.y)
         print "distToIntersectionInitial: " + str(distTravelled)
         print "calculated Dist: " + str(self.intersection.distance)
+
+        #tell map node to produce a new visual map
         self.visPub.publish("makeMap")
 
     def findLine(self):
@@ -341,9 +378,10 @@ class controller:
 
     #send movement command to robot
     def sendCommand(self, lin, ang):
-        lin = lin*self.speed
-        #print "speed: " + str(lin) + ", " + "ang: " + str(ang)
+        #apply sign information
         lin = self.speed*lin
+
+        #send twist command if the motors are set to on
         if cv2.getTrackbarPos(self.switchM,'image') == 1:
             twist = Twist()
             twist.linear.x = lin; twist.linear.y = 0; twist.linear.z = 0
